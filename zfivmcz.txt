@@ -1,0 +1,1808 @@
+new;closeall;
+         
+         @ Program to make cross sectionally dependent panel and estimate by method of moments and other methods@
+         @   This version to estimate the FIVR and FIVU models. J Symons, June 21, 2009  @
+
+
+                                               @PROGRAM MAIN@
+
+
+
+
+
+         
+   @  program parameters @
+                 et=hsec;
+                 rndseed  60136397; @specify seed for random-number creation@
+               rndseed 573;  @rndseed 457618113;  rndseed 457;@
+               
+     @DATA CONSTRUCTION AND ESTIMATION PROCEDURES: USER-SPECIFIED@
+
+                 nrepits=100; @Specify number of Monte Carlo experiments@
+                 ntries=1; @number of re-initialisations@
+                 t =10;   @time dimension@
+                 n=100;   @number of cross-sections@
+                 q=2;       @ number of variables including dep var  @
+                 phi1=-.5;   @ ldv coefficient  @
+                 phi2=0;     @  first explanatory var coefficient   @
+                 delta=1;//1/(1+phi1);
+                    
+                 @factor specification@
+                 facfac1=1; @std dev of first factor@
+                 facfac2=0;  @std dev of second factor@
+                 fefac=1*1;   @std dev of f-e factor@
+                 flfac=1; @std dev of factor loadings@
+                  
+                 meangam=0; @mean of factor loadings@
+
+                 epsfac=1;  @std devn of innovation@
+
+      @estimation procedure for min@
+                  nf=2; @ number of factors fitted  @
+                  p=1;       @  number of instruments @
+                  ninc=nf; @number of initial conditions for FIVR=#factors for single ldv model@
+                  tol=.001;  @tolerance for mod(grad) at convergence@
+                  pertfac=1;
+      @estimation methods@
+                 runab=0;   @run Arrelano-Bond@
+                 runols=0;   @run OLS@
+                 runpes=0;   @run method of peseran@
+                 runfivr=0;   @run fivr@
+                 runfivu=0;   @run fivu@
+                 runfivufe=1;   @run fivufe@
+                 runfivrfestat=0; @run fivrfestat@
+
+       @GMM options: only one can be specified@
+                 runaitkenfivu=0;  @specifies unrestricted fivu for first step@
+                 runaitkenfe=1;    @specifies unrestricted fivufe for first step@
+                 runaitkenfivr=0;   @specifies restricted fivr for first step@
+                 runaitkenfivrfestat=0;   @specifies restricted fivrfestat for first step@
+
+ @END USER-SPECIFICATION OF DATA CONSTRUCTION AND ESTIMATION PROCEDURES@
+
+        @various program parameters@
+                  r=q-1;     @ number of right hand side variables      @
+                  phitr=phi1|phi2; @ parameter vector@
+                  if r == 1;phitr=phi1;endif;
+                 dimthetafivr=r+ninc+nf*t;
+                 dimtheta=nf*t+nf*p*t+r;  
+                 dimthetafivrfe=r+t*(nf-1)+1+ninc+n*t*(nf-1);
+
+
+      @initialise experiment storage vectors@
+                  phihats= initialp(nrepits);
+                  phihatab=initialp(nrepits); 
+                  phihatols=initialp(nrepits);
+                  iterations= initialp(nrepits);
+                  phihatpes=initialp(nrepits);
+                  phihatfivr=initialp(nrepits);
+                  phihatfivu=initialp(nrepits);
+                  phihatfivufe=initialp(nrepits);
+                  phihatfivrfestat=initialp(nrepits);
+                  resultsfivr=zeros(nrepits,3);
+                  resultsfivu=zeros(nrepits,3);
+                  resultsfivufe=zeros(nrepits,3);
+                  resultsfivrfestat=zeros(nrepits,3);
+                  resultsab=zeros(nrepits,3);
+                  evmat=zeros(dimtheta,nrepits);
+
+         @MONTE CARLO LOOP@
+                fails=0;
+                i=1;
+
+               print "Net degrees of freedom = " p*t*(t+1)/2-nf*t*(p+1)+nf-r;
+       
+      do while i<=nrepits;
+
+          print "";
+          print "EXPERIMENT NUMBER =" i;
+
+
+           @ Create moment matrix for a simulation@
+                
+                betatr=1|phi1|phi2;
+                {x,m,mt,ftr,q3,q4,mf,z}=dataar;
+
+
+@ some common matrices@
+
+s=zeros(t*(t+1)/2,t*t);@make selector matrix@
+    rown=1;
+    do while rown<=t;
+         s[rown*(rown-1)/2+1:rown*(rown+1)/2,(rown-1)*t+1:(rown-1)*t+1+rown-1]=eye(rown);
+         rown=rown+1;
+    endo;
+
+c=eye(t*(t+1)/2);phihat0=-phi1;g0=rndn(p*nf*t,1);f0=rndn(nf*t,1);
+cs=s;
+vechm=momentmat(mf); 
+cvechm=vechm;
+
+pp=perm(p*t,nf);
+ppp=perm(nf,t);
+
+ffe=zeros(1,t);
+if nf>1; ffe=ffe|ones((nf-1),t);endif;
+ffe=vec(ffe);
+zeroufe=ones(r,1)|ffe|ones(p*t*nf,1);
+
+jtop=eye(r)~zeros(r,nf*p*t)~zeros(r,ninc);
+jbot=zeros(nf*p*t,r)~eye(nf*p*t)~zeros(nf*p*t,ninc); 
+
+@ Create Aitken matrix: identity if Aitken not invoked  @
+
+if runaitkenfivu+runaitkenfivr+runaitkenfe+runaitkenfivrfestat==1;{c,phihat0,f0,g0}=aitken(x,mf,z,1);endif;
+cvechm=c*vechm;
+cs=c*s;
+
+
+@end some common matrices@    
+           
+
+
+@Perform estimations@
+
+             @ estimate by AB  @
+                if runab==1;
+                   yyy=reshape(x[.,1],t,n);
+                   xyy=0*reshape(x[.,2],t,n);
+                  {ab1,ab2,sab1f,sab2f}=gmmyx(yyy,xyy);
+                   phihatab[i,.]=ab2[1,1];
+                  resultsab[i,1]=phihatab[i,1];
+                endif;
+
+           @ estimate by OLS  @
+               if runols==1;
+               phihatols[i,.]=mols;
+               endif;
+
+             @ estimate by method of Peseran@
+               if runpes==1;
+                 phihat=mpes;
+                 phihatpes[i,.]=phihat';
+               endif;
+
+               @ estimate by FIVUFE@
+               if runfivufe==1;
+              {phihat,ss,mgrad,f,g}=mfivufe(x,mf);
+               phihatfivufe[i,.]=phihat;
+               www=phihat~ss~mgrad;
+               resultsfivufe[i,.]=www;
+                endif;
+
+
+               @ estimate by FIVU@
+               if runfivu==1;
+                  {phihat,ss,multi,f,g}=mfivu(x,mf);
+                   phihatfivu[i,.]=phihat;
+                   www=phihat~ss~multi;
+                   resultsfivu[i,.]=www;
+                   endif;
+
+                @ estimate by FIVR@
+                 if runfivr==1;
+                 {phihat,ss,mgrad,f,g}=mfivr(x,mf);
+                 phihatfivr[i,.]=phihat;print "g" g;
+                 www=phihat~ss~mgrad;
+                 resultsfivr[i,.]=www;
+                 endif;
+
+                @ estimate by FIVRFESTAT@
+                 if runfivrfestat==1;
+                 {phihat,gam}=mfivrfestat;
+                 phihatfivrfestat[i,.]=phihat;
+              
+                 
+                 endif;
+
+            i=i+1;
+  
+        endo;
+
+                          @END MONTE CARLO LOOP@
+
+@OUTPUT RESULTS@
+             
+          print "fails =" fails;
+
+         @program execution time@
+           et=(hsec-et)/6000;print "execution time (mins) = " et;
+
+           print "Net degrees of freedom = " p*t*(t+1)/2-nf*t*(p+1)+nf-r;
+
+          @output statistics@
+                 gosub output;        
+
+         
+        
+         end;
+
+
+         
+         
+
+
+
+                                                     @END MAIN@
+
+
+@ESTIMATION PROCEDURES@
+
+
+
+@OLS ESTIMATION@
+
+proc(1)=mols;
+local xx,yx,est;
+             xx=x[.,2];
+             if r==1;xx=x[.,2];endif;
+             yx=x[.,1];
+            est=(inv(xx'xx)*xx'yx)'; 
+
+retp(est);
+endp;
+
+
+
+
+
+
+@FIVU ESTIMATION@
+
+
+@ proc to estimate by FIVU  @
+
+    proc(5)=mfivu(x,mf);
+
+    local f,g,delta,phi, vechm,iii,s,u,beta,grad,k,mgrad,theta,stepsize,dir,expfac,phihat,count,mgradlast,ssbest,sslast,win,ddd,ntr,reinits,multi,
+    phihatmin,qhess,jjj,eee,nloops,kkk,va,ve,ss,rrr,qdir,bigg,fff,mgradbest,thetabest,ncount,pert,currentphi,thetabaseline, ssbaseline,w,ww,finit;
+
+
+@Set number of searches for FIVU estimation@
+                      ncount=1000; 
+
+
+@Now for the FIVU main procedure@
+
+                      stepsize=.000001;expfac=1.2;
+
+reinits=zeros(2,ntries);
+ntr=1;
+
+do while ntr <= ntries;
+
+/*phi=(ntr-1)*.1;
+theta=initfivu(phi);*/
+
+theta=rndn(dimtheta,1); @ones(dimtheta,1);@
+theta[1,1]=-.8;  @rndu(1,1);@
+
+count=0;
+                     
+continue888:  
+
+
+if count > 0; 
+theta=rndn(dimtheta,1);
+theta[1,1]=rndu(1,1);
+endif; 
+
+
+
+
+        
+             @main FIVU loop@    
+
+
+
+                           iii=1;print "Off we go again in FIVU";
+                           do while iii < 6;
+                               eee=1;do while eee < 200;theta=gcon(theta);theta=fcon(theta);eee=eee+1;endo;
+                              {grad,qhess}=gradfivu(theta); mgrad=(grad'grad)^.5 ; print " mgrad in concentrations=" mgrad;
+                               if mgrad < tol; print "Concentration wins!" ;goto continue42;endif;
+
+                        
+                               
+
+                              {grad,qhess}=gradfivu(theta); mgrad=(grad'grad)^.5 ;
+                               if mgrad < tol; print "Concentration wins!" ;goto continue42;endif;
+                                if mgrad < .1;eee=1;do while eee < 1000;theta=gcon(theta);theta=fcon(theta);eee=eee+1;endo;{grad,qhess}=gradfivu(theta); mgrad=(grad'grad)^.5 ; endif;
+                               if mgrad < tol; print "Concentration wins!" ;goto continue42;endif;
+                               if mgrad < .01;eee=1;do while eee < 1000;theta=gcon(theta);theta=fcon(theta);eee=eee+1;endo;{grad,qhess}=gradfivu(theta);  mgrad=(grad'grad)^.5 ;endif;
+                               if mgrad < tol; print "Concentration wins!" ;goto continue42;endif;
+                               if mgrad < .001;eee=1;do while eee < 1000;theta=gcon(theta);theta=fcon(theta);eee=eee+1;endo; {grad,qhess}=gradfivu(theta); ; mgrad=(grad'grad)^.5 ;endif;
+                               if mgrad < tol; print "Concentration wins!" ;goto continue42;endif;
+                               if mgrad < .0001;eee=1;do while eee < 1000;theta=gcon(theta);theta=fcon(theta);eee=eee+1;endo;{grad,qhess}=gradfivu(theta); mgrad=(grad'grad)^.5 ; endif;
+                               if mgrad < tol; print "Concentration wins!" ;goto continue42;endif;
+                               if mgrad < .0001;eee=1;do while eee < 5000;theta=gcon(theta);theta=fcon(theta);eee=eee+1;endo;{grad,qhess}=gradfivu(theta);  mgrad=(grad'grad)^.5 ; endif;
+                               if mgrad < tol; print "Concentration wins!" ;goto continue42;endif;
+
+
+                           iii=iii+1;
+                          endo;
+
+                count=count+1;
+
+                if count==ncount-1;fails=fails+1;goto continue111;endif; 
+               
+                goto continue888;                     
+
+
+
+continue111:
+
+
+    
+           print"";
+           print "***PROC HAS FAILED***";
+           if win > 0; theta=thetabest; mgrad=mgradbest; endif;
+           print "theta=" theta[1,1];print "mgrad="  mgrad; 
+
+             @end main fivu loop@         
+           
+    
+
+             @exit estimation: store results@
+
+continue42:
+qhess=hessian(theta); evmat[.,i]= eig(qhess);
+                        {grad,qhess}=gradfivu(theta);print "final grad=" mgrad;@print "eig hess=" eig(qhess);stop;@
+                        ss=ssfivu(theta);print "ss=" ss;
+                        {phihat,f,g}=unmkthetau(theta);  @print "f=" f;@
+print "phihat=" phihat;
+reinits[1,ntr]=ss;reinits[2,ntr]=phihat;
+
+
+
+
+
+
+ntr=ntr+1;
+endo;
+
+
+reinits=sortc(reinits',1)';
+@print "mat=" reinits;@
+
+phihat=reinits[2,1];
+ss=reinits[1,1];
+multi=0;
+ if abs(reinits[2,1]-reinits[2,ntries])>0.00001;  multi=1;  endif;                                 
+                        retp(phihat,ss,multi,f,g);
+                        endp;
+          
+@End of FIVU main procedure@
+
+
+
+@FIVUFE ESTIMATION@
+
+
+@ proc to estimate by FIVUFE  @
+
+    proc(5)=mfivufe(x,mf);
+
+    local f,g,delta,phi, vechm,iii,s,u,beta,grad,k,mgrad,theta,stepsize,dir,expfac,phihat,count,mgradlast,ssbest,sslast,win,ddd,
+    phihatmin,qhess,jjj,eee,nloops,kkk,va,ve,ss,rrr,qdir,bigg,fff,mgradbest,thetabest,ncount,pert,currentphi,thetabaseline, ssbaseline;
+
+
+@Set number of searches for FIVU estimation@
+                      ncount=1000; 
+
+
+
+
+@Now for the FIVUFE main procedure@
+
+                      stepsize=.000001;expfac=1.2;
+
+                    
+            
+                     @assemble parameters into single vector for line-search procedure@   
+                   
+                
+                 
+continue555:   
+                     phihat0=rndn(r,1); g0=rndn(nf*p*t,1);
+                      f0=ones(t,1);
+                      if nf>1; f0=f0|rndn((nf-1)*t,1);endif;
+                     f0=ppp'f0; 
+                     theta=phihat0|f0|g0;
+
+
+
+                         
+             @main FIVUFE loop@                      
+   
+                           count=0;
+                           iii=1;print "Off we go again in FIVUFE";
+                           do while iii < 6;
+                               eee=1;do while eee < 200;theta=gcon(theta);theta=fconufe(theta);@print gradfivu(theta);stop; @eee=eee+1;endo;
+                              grad=gradfivufe(theta); mgrad=(grad'grad)^.5 ; print " mgrad in concentrations=" mgrad;
+                               if mgrad < tol; print "Concentration wins!" ;goto continue42;endif;
+                                if mgrad < .1;eee=1;do while eee < 1000;theta=gcon(theta);theta=fconufe(theta);eee=eee+1;endo; grad=gradfivufe(theta); mgrad=(grad'grad)^.5 ;endif;
+                               if mgrad < tol; print "Concentration wins!" ;goto continue42;endif;
+                               if mgrad < .01;eee=1;do while eee < 1000;theta=gcon(theta);theta=fconufe(theta);eee=eee+1;endo; grad=gradfivufe(theta); mgrad=(grad'grad)^.5 ;endif;
+                               if mgrad < tol; print "Concentration wins!" ;goto continue42;endif;
+                               if mgrad < .001;eee=1;do while eee < 1000;theta=gcon(theta);theta=fconufe(theta);eee=eee+1;endo; grad=gradfivufe(theta); mgrad=(grad'grad)^.5 ;endif;
+                               if mgrad < tol; print "Concentration wins!" ;goto continue42;endif;
+                               if mgrad < .0001;eee=1;do while eee < 1000;theta=gcon(theta);theta=fconufe(theta);eee=eee+1;endo; grad=gradfivufe(theta); mgrad=(grad'grad)^.5 ;endif;
+                               if mgrad < tol; print "Concentration wins!" ;goto continue42;endif;
+                               if mgrad < .0001;eee=1;do while eee < 5000;theta=gcon(theta);theta=fconufe(theta);eee=eee+1;endo; grad=gradfivufe(theta); mgrad=(grad'grad)^.5 ;endif;
+                               if mgrad < tol; print "Concentration wins!" ;goto continue42;endif;
+
+
+                           iii=iii+1;
+                          endo;
+
+                count=count+1;
+
+                if count==ncount-1;fails=fails+1;goto continue111;endif; 
+               
+                goto continue555;                     
+
+
+
+continue111:
+
+
+    
+           print"";
+           print "***PROC HAS FAILED***";
+           if win > 0; theta=thetabest; mgrad=mgradbest; endif;
+           print "theta=" theta[1,1];print "mgrad="  mgrad; 
+
+             @end main fivufe loop@         
+           
+    
+
+             @exit estimation: store results@
+
+continue42:
+qhess=hessian(theta); evmat[.,i]= eig(qhess);
+                        {grad,qhess}=gradfivu(theta);print "final grad=" mgrad;
+                        ss=ssfivu(theta);print "ss=" ss;
+                        {phihat,f,g}=unmkthetau(theta); 
+                                      
+                        retp(phihat,ss,mgrad,f,g);
+                        endp;
+          
+@End of FIVUFE main procedure@
+
+
+@FIVR ESTIMATION@
+
+
+@ proc to estimate by FIVR  @
+
+    proc(5)=mfivr(x,mf);
+
+    local f,g,delta,phi,iii,s,u,beta,grad,k,mgrad,theta,stepsize,dir,expfac,phihat,currentphi,jump,
+           phihatmin,qhess,jjj,eee,nloops,kkk,va,vv,ss,qdir,rrr,grad0,mgrad0,pert,ncount,mgradlast,varr,
+           theta0,mgradbest, ssbest,thetabest,sslast,nits,jac,thetau,gradu,diff,h,count,theta1,theta2,ddir,zzzzz,reinits,ntr;
+
+
+@bring in moment matrix and structure matrices@
+              {k,u}=structure;
+
+thetabest=zeros(dimthetafivr,1);
+mgradbest=100000;
+
+@Now for the FIVR main procedure@
+
+                      stepsize=.000001;expfac=1.2;
+
+                   
+                   
+                     @assemble parameters into single vector for line-search procedure@     
+                      
+
+@Set number of searches for FIVR estimation@
+                     
+                          reinits=zeros(2,ntries);
+                          ntr=1;
+                           continue66:
+                           print "";print "Off we go again in FIVR";print "";
+
+
+
+
+do while ntr <= ntries;
+
+                          @initial parameters@
+                           phi=(1/ntries)*ntr;f=initfivu(phi);delta=rndn(ninc,1);g=ones(nf*t*p,1);varr=phi|f|g;
+                           zzzzz =gcon(varr);
+                          {phi,f,g}=unmkthetau(zzzzz);
+
+
+                           theta=phi|g|delta;
+                           theta0=theta;
+                          {grad0,qhess}=gradfivr(theta,k,u); 
+                          mgrad0=(grad0'grad0)^.5;
+                          print "";print "mgrad at beginning of procedure" mgrad0;
+                          theta=theta0;
+                          count=0;
+
+                    
+
+                        @ do a number of Newtons and steepest descents@
+
+                                   
+                            nits=10;
+  
+continue99:
+
+                                iii=1;do while iii < nits;
+
+                                 {grad,qhess}=gradfivr(theta,k,u);qdir=invswp(qhess)*grad;{theta,stepsize}=linesrchfivr(theta,vechm,k,u,qdir,stepsize,expfac); 
+                                 {grad,qhess}=gradfivr(theta,k,u);{theta,stepsize}=linesrchfivr(theta,vechm,k,u,grad,stepsize,expfac);
+                                  if iii == 1;mgradlast=(grad'grad)^.5;theta1=theta;endif;if iii == nits-1; print "current stepsize=" stepsize;theta2=theta;endif;iii=iii+1;   endo;
+
+                                 mgrad=(grad'grad)^.5; print "running mgrad =" mgrad;
+
+                                 if mgrad < mgradbest;mgradbest=mgrad; thetabest=theta;print "mgradbest =" mgradbest; endif;
+                                 ddir=theta2-theta1; ddir=ddir/(ddir'ddir)^.5;
+
+                         @exit if converged or if given up@
+                                if mgrad < tol ; goto continue42;endif; 
+                                @if count==ncount-1;fails=fails+1;goto continue1;endif;@
+
+                         if mgrad/mgradlast < .95; goto continue99;endif;
+
+                         if count == 2; theta=rndn(dimthetafivr,1); theta[1,1]=rndu(1,1); goto continue99;endif;     
+   
+                         @perturb theta if no improvement after many iterations@
+                                            pert=.9*rndn(dimthetafivr,1)/(dimthetafivr)^.5+.1*ddir;
+                                            currentphi=theta[1,1];
+                                            jump=pertfac*(mgradbest+8-abs(mgradbest-8))/2;
+                                            theta=theta+jump*pert;
+                                            count=count+1;
+                                            print ""; count;
+                                            print "current phi" currentphi; print "mgrad before perturbation" mgrad;
+                                            print"current best mgrad" mgradbest;
+                          @go back to continue with another search@
+                                           goto continue99;
+              
+                                      
+continue1:
+
+           print"";
+           print "***PROC HAS FAILED***"; 
+           print "theta=" theta[1,1];print "mgrad="  mgrad;  
+
+
+                        @exit estimation: store results@
+continue42:
+
+
+                       
+                        {grad,qhess}=gradfivr(theta,k,u);@print "eigs=" eig(qhess);stop;@
+                         mgrad=(grad'grad)^.5;
+                        print "final grad=" mgrad;
+                        ss=ssfivr(theta,vechm,k,u);
+                        {phihat, g, delta}=unmktheta(theta);
+
+reinits[1,ntr]=ss;reinits[2,ntr]=phihat;
+ntr=ntr+1;
+endo;
+reinits=sortc(reinits',1)';
+@print "mat=" reinits;@
+phihat=reinits[2,1];
+ss=reinits[1,1];
+
+beta=ones(2,1);beta[2,1]=-phi;
+h=k*(beta.*.eye(p*t*nf));
+f=h*pp*g-u*delta;                                 
+                        
+                         retp(phihat,ss,mgrad,f,g);
+                         endp;
+          
+@End of FIVR main procedure@
+
+
+@FIVRFESTAT ESTIMATION@
+
+
+@ proc to estimate by FIVRFESTAT@
+
+
+    proc(2)=mfivrfestat;
+
+    local col1, col2, phi, idv, pest,gam,ii,c,zzz,cm,cs;
+
+cm=vechm;cs=s;
+ii=1;
+do while ii <3;
+
+    col1=cm[.,1]; col2=cm[.,2];
+    idv=col2~(cs*(ones(t,1).*.eye(t)))*ones(t,1);
+  
+    pest= inv(idv'idv)*(idv'col1);
+    phi=pest[1,1];gam=pest[2,1];
+    print "phi=" phi;
+
+    {c,zzz,f,g}=aitken(x,mf,z,1.0);
+
+    cm=c*vechm; cs=c*s;
+ii=ii+1;
+endo;
+    retp(phi,gam);
+     endp;
+          
+@End of FIVRFESTAT main procedure@
+
+@SUBROUTINES TO CREATE THE AITKEN MATRIX@
+
+
+@ proc aitken  @
+
+proc(4)=aitken(x,mf,z,phi);
+local c, betahat, phihat,ss,mgrad,f,g,ait,ttt,sss,uuu,vvv,rrr,ccc,va,ve;
+c=eye(t*(t+1)/2);
+if runaitkenfe == 1;{phihat,ss,mgrad,f,g}=mfivufe(x,mf);endif;
+if runaitkenfivr ==1;{phihat,ss,mgrad,f,g}=mfivr(x,mf);endif;
+if runaitkenfivu == 1;{phihat,ss,mgrad,f,g}=mfivu(x,mf);endif;
+if runaitkenfivrfestat == 1;phihat=phi;f=ones(t,1); g=ones(t,1); endif;
+
+
+betahat=1|-phihat;
+
+f=0*f;g=0*g;
+
+ccc=0;
+
+ait=zeros(t*(t+1)/2,t*(t+1)/2);
+ttt=1;
+do while ttt<=t;
+     sss=1;
+     do while sss<=ttt;
+          ccc=ccc+1;
+           rrr=0;
+           vvv=1;
+           do while vvv<=t;
+                  uuu=1;
+                  do while uuu<=vvv;
+                        rrr=rrr+1;
+                        ait[rrr,ccc]=cst(sss,ttt,betahat,f,g,x,z)'cst(uuu,vvv,betahat,f,g,x,z)/n;
+                         uuu=uuu+1;
+                   endo;
+                   vvv=vvv+1;
+            endo;
+            sss=sss+1;
+      endo;
+      ttt=ttt+1;
+endo;
+ait=0.5*(ait+ait');
+/*  {va,ve}=eighv(ait);
+ ttt=1;do while ttt<=t*(t+1)/2;if abs(va[ttt,1])<10^(-10);va[ttt,1]=0;else; va[ttt,1]=va[ttt,1]^-.5;endif;ttt=ttt+1;endo;
+ait=diagrv(zeros(t*(t+1)/2,t*(t+1)/2),va)*ve; */
+
+ait=inv(ait);ait=0.5*(ait+ait');
+ait=chol(ait);
+
+retp(ait,phihat,f,g);
+endp;
+
+@This procedure returns one of the vectors in the inner products that form the entries in the Aitken matrix@
+
+
+proc(1)=cst(sss,ttt,betahat,f,g,x,z);
+local colst,gs,bigg,bigf,ft,xit,zis,mcolst;
+bigf=reshape(f,t,nf);
+bigg=reshape(g,nf,p*t)';
+gs=bigg[p*(sss-1)+1:p*sss,.];
+ft=bigf[ttt,.]';
+xit=x[(ttt-1)*n+1:ttt*n,.]*betahat;
+zis=z[(sss-1)*n+1:sss*n,.];
+colst=zis.*xit-gs*ft*ones(n,1); mcolst=colst'ones(n,1)/n;colst=colst-mcolst*ones(n,1);
+retp(colst);
+endp;
+
+
+
+
+
+
+
+@SUBROUTINES FOR FIVUFE@
+
+@procedure to concentrate out f and beta@
+
+proc(1)=fconufe(theta);
+local phi, f,g,bigf,beta,mmm,xxx,yyy,zzz,bigg,ss,res,vvv,va,vv,grad,ddd,pp;
+{phi,f,g}=unmkthetau(theta);
+bigg=reshape(g,nf,p*t)';
+
+ddd=(-cs*( eye(t) .*.bigg))*ppp';
+yyy=cvechm[.,1]+ddd[.,1:t]*(ones(t,1));
+if nf > 1; xxx=cvechm[.,2]~ddd[.,t+1:nf*t];else; xxx=cvechm[.,2];endif;
+zzz=invswp(xxx'xxx)*xxx'yyy;
+phi=zzz[1,1];
+if nf>1;f=-zzz[2:(nf-1)*t+1,1];
+f=ones(t,1)|f;f=ppp'f; 
+else; f=ones(t,1);endif;
+theta=phi|f|g;
+
+retp(theta);
+endp;
+
+@grad for fivufe@
+proc(1)=gradfivufe(theta);
+local grad,hhh;
+{grad,hhh}=gradfivu(theta);
+grad=zeroufe.*grad;
+retp(grad);
+endp;
+
+
+@ SUBROUTINES FOR MFIVR @
+
+
+@grad subroutine@
+
+proc(2)=gradfivr(theta,k,u);
+local vvv,qhessu,grad,phi,g,delta,beta,h,f,qhess,bigf,bigg,thetau,gradu,eee,jac;
+{phi,g,delta}=unmktheta(theta);
+beta=ones(2,1);beta[2,1]=-phi;
+h=k*(beta.*.eye(p*t*nf));
+f=h*pp*g-u*delta; 
+thetau=phi|f|g;
+{gradu,qhessu}=gradfivu(thetau);qhessu=.5*(qhessu+qhessu');
+jac=jacfivr(theta,k,u);
+grad=jac'gradu;
+qhess=jac'qhessu*jac;
+retp(grad,qhess);
+endp;
+
+@routine to set up the structure matrices of the problem@
+proc(2)=structure;
+local mad,k,s,rown,u,uu,i;
+@forms the k matrices from which h is built@
+   mad=zeros(t,t);
+      i=1;
+      do while i<t;
+           mad[i,i+1]=1;
+           i= i+1;
+      endo;   
+k=  (mad~eye(t)).*.eye(nf);
+
+@forms the u matrix of initial conditions@
+ u=zeros(nf*t-ninc,ninc);
+ u=u|eye(ninc);
+
+retp(k,u);         
+endp; 
+
+
+@unmakes the parameter vectors from theta@
+proc(3)=unmktheta(theta);  
+local phi, g, delta;
+phi=theta[1:q-1,1]; g=theta[q:q+p*t*nf-1,1]; delta=theta[q+p*t*nf:q+p*t*nf+ninc-1,1];
+retp(phi,g,delta);
+endp;
+
+@puts the moment matrix into correct form@
+proc(1)=momentmat(mf);
+local vechm, coln,rown;
+vechm=mf[1,1:2];
+    coln=2;
+    do while coln<=t;
+       rown=1;
+          do while rown<=coln;
+             vechm=vechm|mf[rown,2*(coln-1)+1:2*(coln-1)+2];
+             rown=rown+1;
+          endo;
+       coln=coln+1;
+    endo;
+retp(vechm);
+endp;
+
+@initialises theta for fivr@
+proc(1)=initfivr(theta,expfac,k,u);
+local m1, m2, theta1,dir,qhess,stepsize,jjj,ss,thet;
+m1=vechm[.,1];
+m2=vechm[.,2];
+theta1=(m1'm2)/(m2'm2);print "theta1=" theta1;
+jjj=1;
+do while jjj<150;
+    {dir,qhess}=gradfivr(theta,k,u);
+     theta[1,1]=theta1;
+     dir[1,1]=0;
+     stepsize=1;
+     {theta,ss}=linesrchfivr(theta,vechm,k,u,dir,stepsize,expfac);
+     jjj=jjj+1;
+endo;
+
+retp(theta);
+endp;
+
+
+@procedure to create the permutation matrix to swop veca with vecat@
+proc(1)=perm(nr,nc);
+local r,c,permm,g,pg,vt;
+permm=zeros(nr*nc,nr*nc);
+c=1;
+do while c <= nc;
+r=1;
+do while r <= nr;
+permm[(r-1)*nc+c,(c-1)*nr+r]=1;
+r=r+1;
+endo;
+c=c+1;
+endo;
+retp(permm);
+endp;       
+
+
+
+
+
+@Minimises modgrad along line through theta in direction dir@
+
+                       proc (2)= linesrchfivr(theta,vechm,k,u,dir,stepsize,expfac);
+                            local thetanew,thetaold, grad,gradnew,mgrad,mgradnew,expanfac,redfac,ss,qhess;
+                    
+                                  redfac=2;
+                                  if stepsize < .0000001;stepsize=.0000001;endif;
+
+                                  dir=-dir;
+
+               @search along line for an improved |grad|@
+
+                   @initial values at theta@
+                          {grad,qhess}=gradfivr(theta,k,u); 
+                          mgrad=(grad'grad)^.5;
+continue1:
+
+                   @new values in direction dir@
+                          thetanew=theta+stepsize*dir;
+              
+                          {gradnew,qhess}=gradfivr(thetanew,k,u);
+                          mgradnew=(gradnew'gradnew)^.5;
+
+                    @test to see if grad has improved: reduce stepsize if not@    
+                          if mgradnew > mgrad;
+                                stepsize=stepsize/redfac;
+                                goto continue1;
+                          endif;
+
+                     @update theta if smaller |grad| is found@
+                          thetaold=theta;
+
+continue2:
+
+                             thetanew=theta+stepsize*dir;
+                             {gradnew,qhess}=gradfivr(thetanew,k,u);
+                             mgradnew=(gradnew'gradnew)^.5;
+
+                             if mgradnew < mgrad;
+                                 stepsize=expfac*stepsize;thetaold=thetanew;
+                                 goto continue2;
+                             endif;
+        
+                            theta=theta+(stepsize/expfac)*dir;
+                            {grad,qhess}=gradfivr(theta,k,u);
+                            stepsize=stepsize/expfac;   
+                                           
+                 
+                       retp(theta,stepsize);
+                       endp;
+
+ 
+
+@routine to calculate the value of the SS criterion function@
+proc(1)=ssfivr(theta,vechm,k,u);
+local phi,g,delta,beta,f,vvv,h,ss,bigf;
+
+{phi,g,delta}=unmktheta(theta);
+beta=ones(2,1);beta[2,1]=-phi;
+h=k*(beta.*.eye(p*nf*t));
+f=h*g-u*delta;
+bigf=reshape(f,t,nf);
+vvv=cvechm*beta-cs*(bigf.*.eye(p*t))*g;
+ss=vvv'vvv;
+retp(ss);
+endp;
+
+
+
+
+@Minimises SS along line through theta in direction dir@
+
+                       proc (2)= alinesrchfivr(theta,vechm,k,u,dir,stepsize,expfac);
+                            local thetanew,thetaold, grad,gradnew,mgrad,mgradnew,expanfac,redfac,ss,qhess,ssnew;
+                                  redfac=2;
+                                  if stepsize < .0000001;stepsize=.0000001;endif;
+
+                                  dir=-dir;
+
+               @search along line for an improved ss@
+
+                   @initial values at theta@
+                        ss=ssfivr(theta,vechm,k,u);
+  
+                       continue1:
+
+                   @new values in direction dir@
+                          thetanew=theta+stepsize*dir;
+                          ssnew=ssfivr(thetanew,vechm,k,u);
+                    @test to see if ss has improved: reduce stepsize if not@    
+                          if ssnew > ss;
+                                stepsize=stepsize/redfac;
+
+                                goto continue1;
+                          endif;
+
+ @update theta if smaller ss is found@
+                          theta=thetanew;
+
+                     continue2:
+
+                             thetanew=theta+stepsize*dir;
+                              ssnew=ssfivr(thetanew,vechm,k,u);
+
+                             if ssnew < ss;
+                                 stepsize=expfac*stepsize;thetaold=thetanew;
+                                 goto continue2;
+                             endif;
+        
+                            theta=theta+(stepsize/expfac)*dir;
+                            
+                            stepsize=stepsize/expfac;   
+                  
+                       retp(theta,stepsize);
+                    
+
+                      endp;
+
+
+
+@forms the jacobian to transform from FIVU to FIVR@
+proc(1)=jacfivr(theta,k,u);
+local jmid,beta,f,h,phi,g,delta,dbdphi,jac;
+
+{phi,g,delta}=unmktheta(theta);
+beta=ones(2,1);beta[2,1]=-phi;
+h=k*(beta.*.eye(p*t*nf));
+f=h*pp*g-u*delta; 
+dbdphi=zeros(2,1); dbdphi[2,1]=-1;
+jmid=k*(eye(q).*.(pp*g))*dbdphi;
+jmid=jmid~(h*pp)~(-u);
+jac=jtop|jmid|jbot;@print "cols" cols(jac); print "rows" rows(jac);print jac;print eig(jac'jac);stop;@
+retp(jac);
+endp;
+ 
+
+
+
+
+
+
+
+
+
+@FIVU SUBROUTINES@
+
+
+@gradu subroutine@
+
+proc(2)=gradfivu(theta);
+local vvv,dbdphi,dfdb,dfdd,dvvvdphi,dvvvdf,dvvvdg,dvvvdtheta,gradu,phi,g,delta,beta,h,f,qhess,bigf,bigg;
+{phi,f,g}=unmkthetau(theta);
+beta=ones(2,1);beta[2,1]=-phi;
+bigf=reshape(f,t,nf);
+bigg=reshape(g,nf,p*t)';
+vvv=cvechm*beta-cs*(bigf.*.eye(p*t) )*g;
+dbdphi=zeros(2,1); dbdphi[2,1]=-1;
+dvvvdphi=cvechm*dbdphi;
+dvvvdf=-cs*(eye(t).*.bigg);
+dvvvdg=-cs*((bigf.*.eye(p*t)));
+dvvvdtheta=dvvvdphi~dvvvdf~dvvvdg;
+
+gradu=2*(vvv')*dvvvdtheta;
+gradu=gradu';
+
+
+qhess=dvvvdtheta'dvvvdtheta;
+
+
+retp(gradu,qhess);
+endp;
+
+
+@procedure to concentrate out g and beta@
+
+proc(1)=gcon(theta);
+local phi, f,g,bigf,beta,mmm,xxx,yyy,zzz,res,grad,vet,ress,bigg,vvv;
+{phi,f,g}=unmkthetau(theta);
+bigg=reshape(g,nf,p*t)';
+bigf=reshape(f,t,nf);
+mmm=cvechm~ (-cs*( bigf.*.eye(p*t) ));
+yyy=mmm[.,1];
+xxx=mmm[.,2:p*nf*t+2];
+zzz=invswp(xxx'xxx)*xxx'yyy;
+phi=zzz[1,1];
+g=-zzz[2:p*nf*t+1,1];
+theta=phi|f|g;
+retp(theta);
+endp;
+
+@procedure to concentrate out f and beta@
+
+proc(1)=fcon(theta);
+local phi, f,g,bigf,beta,mmm,xxx,yyy,zzz,bigg,ss,res,vvv,va,vv,grad;
+{phi,f,g}=unmkthetau(theta);
+bigg=reshape(g,nf,p*t)';
+mmm=cvechm~ (-cs*( eye(t) .*.bigg));
+yyy=mmm[.,1];
+xxx=mmm[.,2:nf*t+2];
+zzz=invswp(xxx'xxx)*xxx'yyy;
+phi=zzz[1,1];
+f=-zzz[2:nf*t+1,1];
+theta=phi|f|g;
+retp(theta);
+endp;
+
+
+
+
+@unmakes the parameter vectors from theta@
+proc(3)=unmkthetau(theta);  
+local phi, g, f;
+phi=theta[1:q-1,1]; f=theta[q:q+t*nf-1,1]; g=theta[q+t*nf:dimtheta,1];
+retp(phi,f,g);
+endp;
+
+@routine to calculate the value of the SS criterion function@
+proc(1)=ssfivu(theta);
+local phi,g,delta,beta,f,vvv,h,ss,bigg;
+{phi,f,g}=unmkthetau(theta);
+beta=ones(2,1);beta[2,1]=-phi;
+bigg=reshape(g,nf,p*t)';
+vvv=cvechm*beta- (cs*( eye(t) .*.bigg))*f;
+ss=vvv'vvv;
+
+retp(ss);
+endp;
+
+        @ initialises storage vectors@
+         
+                proc(1)=initialp(nrepits);
+                   local phihats;
+                     phihats=zeros(nrepits,r);
+                     retp (phihats);
+                 endp;
+
+
+
+@Minimises modgrad along line through theta in direction dir@
+
+                       proc (2)= linesrchfivu(theta,dir,stepsize,expfac);
+                            local thetanew,thetaold, grad,gradnew,mgrad,mgradnew,expanfac,redfac,ss,qhess,theta1,theta2,theta3;
+                        
+                                  redfac=2;
+                                  if stepsize < .0000001;stepsize=.0000001;endif;
+
+                                  dir=-dir;
+
+               @search along line for an improved |grad|@
+
+                   @initial values at theta@
+                          {grad,qhess}=gradfivu(theta); 
+                          mgrad=(grad'grad)^.5;
+
+                    continue1:
+
+                   @new values in direction dir@
+                          thetanew=theta+stepsize*dir;
+
+                    
+                          {gradnew,qhess}=gradfivu(thetanew);
+                          mgradnew=(gradnew'gradnew)^.5;
+
+                    @test to see if grad has improved: reduce stepsize if not@    
+                          if mgradnew > mgrad;
+                                stepsize=stepsize/redfac;
+
+                                goto continue1;
+                          endif;
+
+ @update theta if smaller |grad| is found@
+                          thetaold=theta;
+
+
+
+
+                     continue2:
+
+                             thetanew=theta+stepsize*dir;
+                  
+                             {gradnew,qhess}=gradfivu(thetanew);
+                             mgradnew=(gradnew'gradnew)^.5;
+                             if mgradnew < mgrad;
+                                 stepsize=expfac*stepsize;thetaold=thetanew;
+                                 goto continue2;
+                             endif;
+         
+                            theta=theta+(stepsize/expfac)*dir;
+                            {grad,qhess}=gradfivu(theta);
+                            stepsize=stepsize/expfac; 
+theta1=theta+stepsize;
+theta2=theta+1000000*stepsize;
+theta3=theta+2000000*stepsize;
+
+
+
+print "final stepsize=" stepsize;
+print "fin"   ssfivu(theta);
+print "steps";
+print ssfivu(theta1);
+print ssfivu(theta2);
+print ssfivu(theta3);stop;
+
+
+                 
+                       retp(theta,stepsize);
+                    
+
+                      endp;
+
+ 
+
+ @Minimises ss along line through theta in direction dir@
+
+                       proc (2)= alinesrchfivu(theta,dir,stepsize,expfac);
+                            local thetanew,thetaold, grad,gradnew,mgrad,mgradnew,expanfac,redfac,ss,qhess,thetain,thetaout,ssin,ssnew;
+                        
+                                  redfac=2;
+                                  if stepsize < .0000001;stepsize=.0000001;endif;
+thetain=theta; ssin=ssfivu(theta);
+
+                                  dir=-dir;
+
+               @search along line for an improved |grad|@
+
+                   @initial values at theta@
+                          ss=ssin;
+                    continue1:
+
+                   @new values in direction dir@
+                          thetanew=theta+stepsize*dir;
+
+                    
+                          ss=ssfivu(theta);
+
+                    @test to see if grad has improved: reduce stepsize if not@    
+                          if ss > ssin;
+                                stepsize=stepsize/redfac;
+if stepsize < 10^(-12); theta=thetain; @print "no improvement in ss" ;@ goto continue9;endif;
+                                goto continue1;
+                          endif;
+
+ @update theta when smaller ss is found@
+                          thetaold=theta;
+
+
+
+
+                     continue2:
+
+                             thetanew=thetaold+stepsize*dir;
+                  
+                             ssnew=ssfivu(thetanew);
+                             if ssnew < ss;
+                                 stepsize=expfac*stepsize;thetaold=thetanew;
+                                 goto continue2;
+                             endif;
+         
+                            theta=theta+(stepsize/expfac)*dir;
+                            
+                            stepsize=stepsize/expfac; 
+
+if ssfivu(theta) > ssin; theta=thetain; @print "no improvement in ss";@ endif;
+
+continue9:
+                 
+                       retp(theta,stepsize);
+                    
+
+                      endp;
+
+@Creates a numerical Hessian for FIVU@
+
+proc(1)=hessian(theta);
+
+local delta,grad0,thetac,iii,hessn,grad1,aaa;
+hessn=zeros(dimtheta,dimtheta);
+delta=10^(-8);
+{grad0,aaa}=gradfivu(theta);
+
+iii=1;
+
+do while iii <= dimtheta;
+thetac=theta;
+thetac[iii,1]=theta[iii,1]+delta;
+{grad1,aaa}=gradfivu(thetac);
+hessn[.,iii]=(10^8)*(grad1-grad0);
+iii=iii+1;
+endo;
+
+retp(hessn);
+endp;
+
+@ Creates initial values for FIVU@
+
+proc(1)=initfivu(phi);
+
+local theta,beta,w,ww,va,ve,finit;
+theta=rndn(dimtheta,1);
+beta=ones(2,1);beta[2,1]=-phi;w=x*beta;w=reshape(w,t,n); ww=w*w'/n;{va,ve}=eighv(ww);finit=ve[.,t];
+theta[2:t+1,1]=finit;  theta[1,1]=-rndu(1,1);
+
+retp(theta);
+
+endp;
+
+
+
+@ End of FIVU subroutines@
+ 
+
+
+             @subroutine to print output@
+        
+         output:
+
+         print "";
+         print "";
+         
+         
+         print "n          t       repetitions  =" n        t        nrepits;
+         print "Number of factors fitted =" nf;
+         print "True parameter vector   =" phitr';
+
+         print "";
+ 
+      
+       
+
+         if runab==1;        
+         print "";
+         print "ab average";
+         meanphihatab=sumc(phihatab)/nrepits;
+         meanphihatab;
+         print "";
+         print "ab stdev";
+         (sumc((phihatab-meanphihatab'.*ones(nrepits,1))^2)/nrepits)^.5;
+         endif;
+
+
+         if runols==1;        
+         print "";
+         print "ols average";
+         meanphihatols=sumc(phihatols)/nrepits;
+         meanphihatols;
+         print "";
+         print "ols stdev";
+         (sumc((phihatols-meanphihatols'.*ones(nrepits,1))^2)/nrepits)^.5;
+         endif;
+
+  if runpes==1;        
+         print "";
+         print "pes average";
+         meanphihatpes=sumc(phihatpes)/nrepits;
+         meanphihatpes;
+         print "";
+         print "pes stdev";
+         (sumc((phihatpes-meanphihatpes'.*ones(nrepits,1))^2)/nrepits)^.5;
+         endif;
+        
+
+if runfivr==1;  
+         print "";
+         print "fivr average";
+         meanphihatfivr=sumc(phihatfivr)/nrepits;
+         meanphihatfivr';
+         print "";
+         print "fivr stdev";
+         devns=phihatfivr-meanphihatfivr'.*ones(nrepits,1);
+         stdevns=(sumc(devns.*devns/nrepits))^.5;
+         stdevns';
+               med=median(phihatfivr);
+               meddev=abs(phihatfivr-med*ones(nrepits,1));
+               e={.75};
+               qsd=quantile(meddev,e);
+               print "";
+               print "fivr median" ;
+               print med;
+               print "";
+               print "fivr qsd";
+               print qsd/1.15;
+         endif;
+
+if runfivu==1;  
+         print "";
+         print "fivu average";
+         meanphihatfivu=sumc(phihatfivu)/nrepits;
+         meanphihatfivu';
+         print "";
+         print "fivu stdev";
+         devns=phihatfivu-meanphihatfivu'.*ones(nrepits,1);
+         stdevns=(sumc(devns.*devns/nrepits))^.5;
+         stdevns';
+               med=median(phihatfivu);
+               meddev=abs(phihatfivu-med*ones(nrepits,1));
+               e={.75};
+               qsd=quantile(meddev,e);
+               print "";
+               print "fivu median" ;
+               print med;
+               print "";
+               print "fivu qsd";
+               print qsd/1.15;
+         endif;
+
+if runfivufe==1;  
+         print "";
+         print "fivufe average";
+         meanphihatfivufe=sumc(phihatfivufe)/nrepits;
+         meanphihatfivufe';
+         print "";
+         print "fivufe stdev";
+         devns=phihatfivufe-meanphihatfivufe'.*ones(nrepits,1);
+         stdevns=(sumc(devns.*devns/nrepits))^.5;
+         stdevns';
+         endif;
+
+if runfivrfestat==1;  
+         print "";
+         print "fivrfestat average";
+         meanphihatfivrfestat=sumc(phihatfivrfestat)/nrepits;
+         meanphihatfivrfestat';
+         print "";
+         print "fivrfestat stdev";
+         devns=phihatfivrfestat-meanphihatfivrfestat'.*ones(nrepits,1);
+         stdevns=(sumc(devns.*devns/nrepits))^.5;
+         stdevns';
+         endif;
+
+
+
+
+
+         return; 
+
+ 
+ @DATA CREATION FOR MONTE CARLO@             
+
+            proc(8)=dataar;
+                       local ft,ai,gamm,eps,idv,dv,x,z,coln,rown,c,yyl,dd,m,mt,qn,fac0,leps,par,fac2,gam2,h,q1,qr,s1,s2,mf;
+
+
+                            @set weak exog param@
+                             par=0.5;
+
+                            @ make factors @
+                            /* ft=facfac1*rndn(t,1);@ft[1:5,1]=ones(5,1); ft[6:10,1]=zeros(5,1);@*/
+                            ft=0.5+facfac1*rndn(t,1);@ft[1:5,1]=ones(5,1); ft[6:10,1]=zeros(5,1);@
+                           
+                            @make fixed effects@
+                            ai=fefac*rndn(n,1);
+
+                            @make factor loadings @
+                             gamm=meangam+flfac*rndn(n,1);
+
+                            @make errors@
+                            eps=epsfac*rndn(t*n,1);
+
+                            @make indep var@
+                             idv=rndn(t*n,1);
+
+                            @make lagged eps@
+                            leps=zeros(n*t,1);
+                            rown=1;
+                                  do while rown < t;
+                                    leps[rown*n+1:(rown+1)*n,1]=eps[(rown-1)*n+1:rown*n];
+                                    rown=rown+1;
+                                   endo;
+
+                            @make second factor term@
+                                  @fac2=0.5*facfac*(seqa(1,1,t)-(t+1)/2);@
+                                   fac2=facfac2*rndn(t,1);
+                                  gam2=meangam+flfac*rndn(n,1);
+
+
+                 @make idv only weakly exog@
+
+                           idv=idv+par*leps; 
+                           
+                            yyl=zeros(n*(t+1),2);
+
+   
+                            fac0=1/(1-phi1^2)^.5;
+
+                             @make initial obs@                           
+       
+                                   /*yyl[1:n,2]=ai*(1/(1+phi1))-fac0*phi2*rndn(n,1)+fac0*epsfac*rndn(n,1)+fac0*facfac1*rndn(1,1)*gamm;*/
+                                    yyl[1:n,2]=ai*(2/(1+phi1))-fac0*phi2*rndn(n,1)+fac0*epsfac*rndn(n,1)+fac0*facfac1*rndn(1,1)*gamm;
+                                    /*yyl[1:n,2]=ai*(1/(1+phi1)-(phi1^t)*(delta-(1/(1+phi1))))-fac0*phi2*rndn(n,1)+fac0*epsfac*rndn(n,1)+fac0*facfac1*rndn(1,1)*gamm;*/
+                                    /*yyl[1:n,2]=ai*1-fac0*phi2*rndn(n,1)+fac0*epsfac*rndn(n,1)+fac0*facfac1*rndn(1,1)*gamm;*/
+                                   if phi1 == -1; yyl[1:n,2]=zeros(n,1);endif;
+
+                             @ fill in rest of data@
+                                     rown=1;
+                                     do while rown <= t;
+                                         dd=-phi1*yyl[(rown-1)*n+1:rown*n,2] -phi2*idv[(rown-1)*n+1:rown*n]+ai+ft[rown,1]*gamm+fac2[rown,1]*gam2+eps[(rown-1)*n+1:rown*n,1];
+                                         yyl[(rown-1)*n+1:rown*n,1]=dd; 
+                                         yyl[rown*n+1:(rown+1)*n,2]=dd;
+                                         rown=rown+1;
+                                     endo;
+
+
+                             yyl=yyl[1:n*t,.];
+
+
+                              x=yyl;
+
+
+                            @instruments - just dep vars for the moment@
+                      @ z=x[1:n*t,2]~ones(n*t,1); @
+                        z=x[1:n*t,2];
+
+
+                             m=zeros(t*p,t*q);
+                             mf=zeros(t*p,t*q);
+  
+                            mt=zeros(t*q,t*p);
+                             qn=zeros(p,q);                           
+                                coln=1;
+                                do while coln <= t;
+                                           rown=coln;
+                                           do while rown <=t;
+                                           h=z[n*(coln-1)+1:n*coln,1:p]'x[n*(rown-1)+1:n*rown,1:q]/n;
+                                           m[p*(rown-1)+1:p*rown,(coln-1)*q+1:coln*q]=h;
+                                           mt[q*(rown-1)+1:q*rown,(coln-1)*p+1:coln*p]=h';
+
+
+                                           mf[(coln-1)+1,2*(p*(rown-1)+1)-1:2*(p*(rown-1)+1)]=h;                              
+
+
+                                           if (rown==1) and (coln==1); qn=h;else; qn=qn|h;endif;
+                                           rown=rown+1;
+                                           endo;
+                                    coln=coln+1;
+                                endo;
+
+
+q1=qn*(1|zeros(r,1));
+qr=qn*(zeros(1,r)|eye(r));
+q3=inv(qr'qr)*qr';
+q4=q3*q1;
+ 
+
+
+                         retp(x,m,mt,ft,q3,q4,mf,z);
+                    
+                             endp;
+
+                   proc(6)=datavar;
+                       local ft,ai,gamm,eps,idv,dv,x,z,coln,rown,c,yyl,dd,m,mt,qn,fac0,leps,par,fac2,gam2,h,q1,qr,xx,epsx,hi1,hi2,hh,startups;
+
+                             hi1=-.4;
+                            hi2=-.2;
+                             startups=20;
+                             t=t+startups;                         
+
+                            @ make factors @
+                             ft=facfac1*rndn(t,1);
+                           
+                            @make fixed effects@
+                            ai=fefac*(rndu(n,1)-.5);
+
+                            @make factor loadings @
+                             gamm=meangam+flfac*(rndu(n,1)-.5);
+
+                            @make errors@
+                            eps=epsfac*rndn(t*n,1);
+                            epsx=epsfac*rndn(t*n,1);
+
+                        
+                          
+
+                            @make second factor term@
+                                  @fac2=0.5*facfac2*(seqa(1,1,t)-(t+1)/2);@
+                                   fac2=facfac2*rndn(t,1);
+                                  gam2=meangam+flfac*(rndu(n,1)-.5);
+
+
+               
+                           
+                            xx=zeros(n*t,4);
+
+   
+                                                                        
+        
+                                   
+
+                             @ fill in rest of data@
+                                     rown=1;
+                                     do while rown <= t-1;
+                                         dd=-phi1*xx[(rown-1)*n+1:rown*n,3] -phi2*xx[(rown-1)*n+1:rown*n,4]+ft[rown,1]*gamm+fac2[rown,1]*gam2+eps[(rown-1)*n+1:rown*n,1];
+                                         hh=-hi1*xx[(rown-1)*n+1:rown*n,3] -hi2*xx[(rown-1)*n+1:rown*n,4]+epsx[(rown-1)*n+1:rown*n,1];
+                                         xx[(rown-1)*n+1:rown*n,1]=dd; 
+                                         xx[rown*n+1:(rown+1)*n,3]=dd;
+                                         xx[(rown-1)*n+1:rown*n,2]=hh; 
+                                         xx[rown*n+1:(rown+1)*n,4]=hh;
+
+
+
+                                         rown=rown+1;
+                                     endo;
+
+
+                            x=xx[startups*n+1:n*t,1]~xx[startups*n+1:n*t,3:4];
+t=t-startups;
+                            @instruments - just dep vars for the moment@
+                             z=x[1:n*t,2:3];
+
+                             m=zeros(t*p,t*q);
+                             mt=zeros(t*q,t*p);
+                             qn=zeros(p,q);                           
+                                coln=1;
+                                do while coln <= t;
+                                           rown=coln;
+                                           do while rown <=t;
+                                           h=z[n*(coln-1)+1:n*coln,1:p]'x[n*(rown-1)+1:n*rown,1:q]/n;
+                                           m[p*(rown-1)+1:p*rown,(coln-1)*q+1:coln*q]=h;
+                                           mt[q*(rown-1)+1:q*rown,(coln-1)*p+1:coln*p]=h';
+                                           if (rown==1) and (coln==1); qn=h;else; qn=qn|h;endif;
+                                           rown=rown+1;
+                                           endo;
+                                    coln=coln+1;
+                                endo;
+q1=qn*(1|zeros(r,1));
+qr=qn*(zeros(1,r)|eye(r));
+q3=inv(qr'qr)*qr';
+q4=q3*q1;
+                           retp(x,m,mt,ft,q3,q4);
+                    
+                             endp;
+
+@ARRELANO-BOND ESTIMATOR@
+
+/**
+{ab1,ab2,S_ab1_F,S_ab2_F}=gmmyx(yy_mat,xx_mat);
+ab2 is two step optimal Arellano Bond GMM estimator
+S_ab2_f is the sargan's statistic based on ab2.
+
+yy_mat is a (TxN) matrix of dependent variable.
+xx_mat is a (TxN) matrix of exogenous variable.
+
+**/
+
+proc(4)=gmmyx(yy_mat,xx_mat);
+local n,t,yorx,ful,hy,hx,ind_y,ind_x,zy_i,zx_i,zymat,zxmat,zmat;
+local Hmat,T2,c_t,i,h,om0,om1,z_i,Dymat,Dxmat,dy1mat;
+local ab1_den,ab1_neu,dw_i,dy_i,dx_i,ab1,S_ab1_F,Du_ab1_i;
+local ab2_den,ab2_neu,ab2,S_ab2_F,Du_ab2_i,g_ab1_F,g_ab2_F;
+local Dumat1,Dumat2,Du_bb2mat;
+
+n=cols(yy_mat);t=rows(yy_mat);
+yorx=1;ful=1;
+            T2=t-2;
+if ful==1;
+            hy=(T-1)*(T-2)/2;
+            hx=(T-1)*(T-2)/2+(T-2);
+            ind_y = 0|cumsumc(seqa(1,1,T2));
+            ind_X = 0|cumsumc(seqa(1,1,T2)+1);    
+            i=1;
+                do while i<=n;
+                zy_i=zeros(T2,hy);
+                zx_i=zeros(T2,hx);
+                    c_t=1;
+                    do while c_t<=T2;
+                        
+                        zy_i[c_t,1+ind_y[c_t]:ind_y[c_t+1]]=yy_mat[1:c_t,i]';                
+                        zx_i[c_t,1+ind_x[c_t]:ind_x[c_t+1]]=xx_mat[1:c_t+1,i]';
+                        c_t=c_t+1;
+                    endo;
+                    if i==1;zymat=zy_i;zxmat=zx_i;zmat=zy_i~zx_i;
+                    else;zymat=zymat|zy_i;zxmat=zxmat|zx_i;zmat=zmat|(zy_i~zx_i);                
+                    endif;
+                i=i+1;
+                endo;
+elseif ful==2;            
+            hy=2*T2-1;/* zy */
+            hx=2*T2;/* zx */
+                
+            i=1;
+                do while i<=n;
+                zy_i=zeros(T2,2*T2-1);
+                zx_i=zeros(T2,2*T2);
+                    c_t=2;
+                    zy_i[1,1]=yy_mat[1,i]';
+                    zx_i[1,1:2]=xx_mat[1:2,i]';
+                    do while c_t<=T2;
+                        
+                        zy_i[c_t,2*(c_t-1):2*c_t-1]=yy_mat[c_t-1:c_t,i]';                
+                        zx_i[c_t,2*(c_t-1)+1:2*c_t]=xx_mat[c_t:c_t+1,i]';
+                        c_t=c_t+1;
+                    endo;
+                    if i==1;zymat=zy_i;zxmat=zx_i;zmat=zy_i~zx_i;
+                    else;zymat=zymat|zy_i;zxmat=zxmat|zx_i;zmat=zmat|(zy_i~zx_i);                
+                    endif;
+                i=i+1;
+                endo;
+endif;
+            /** choose Zmat or Zxmat **/
+            if yorx==1;zmat=zmat;
+                elseif yorx==2;zmat=zxmat;
+            endif;
+
+            h=cols(zmat);
+
+            /* initial omega matrix */
+            Hmat=2*eye(T2);
+                c_t=1;
+                do while c_t<=T2-1;
+                    Hmat[c_t+1,c_t]=-1;
+                    Hmat[c_t,c_t+1]=-1;
+                    c_t=c_t+1;
+                endo;
+
+            i=1;
+            om0=zeros(h,h);
+                do while i<=n;
+                    z_i=zmat[1+(i-1)*T2:i*T2,.];
+                    om0=om0+z_i'Hmat*z_i;
+                i=i+1;
+                endo;
+            om0=om0/n;
+
+            /* differenced model */
+           
+            Dymat=yy_mat-lag(yy_mat);
+            Dxmat=xx_mat-lag(xx_mat);
+            dy1mat=lag(Dymat);
+            
+            Dymat=Dymat[3:T,.];
+            Dxmat=Dxmat[3:T,.];
+            dy1mat=Dy1mat[3:T,.];
+
+            /* 1st step GMM */
+            ab1_den=zeros(h,2);
+            ab1_neu=zeros(h,1);
+
+            i=1;
+                do while i<=n;
+                Dw_i=dy1mat[.,i]~dxmat[.,i];
+                Dy_i=dymat[.,i];   
+
+                 z_i=zmat[1+(i-1)*T2:i*T2,.];
+
+                ab1_den=ab1_den+z_i'Dw_i;
+                ab1_neu=ab1_neu+z_i'Dy_i;
+                
+                i=i+1;
+            endo;
+
+            ab1=pinv(ab1_den'pinv(om0)*ab1_den)*ab1_den'pinv(om0)*ab1_neu;
+
+            /* 1st step Sargans Statistic */
+            g_ab1_F=zeros(h,1);
+            Dumat1=zeros(T2,n);
+            om1=zeros(h,h);
+            i=1;
+                do while i<=n;
+                Dw_i=dy1mat[.,i]~dxmat[.,i];
+                Dy_i=dymat[.,i];   
+                Du_ab1_i=Dy_i-Dw_i*ab1;
+
+                 z_i=zmat[1+(i-1)*T2:i*T2,.];
+
+                g_ab1_F = g_ab1_F + z_i'Du_ab1_i;
+                om1= om1 +z_i'Du_ab1_i*Du_ab1_i'z_i;
+                Dumat1[.,i]=Du_ab1_i;                
+
+                i=i+1;
+            endo;
+            g_ab1_F=g_ab1_F/n;
+            S_ab1_F=n*g_ab1_F'pinv(om0)*g_ab1_F;
+            om1=om1/n;
+
+
+            /** 2nd Step GMM **/
+            ab2_den=zeros(h,2);
+            ab2_neu=zeros(h,1);
+
+            i=1;
+                do while i<=n;
+                Dw_i=dy1mat[.,i]~dxmat[.,i];
+                Dy_i=dymat[.,i];   
+
+                 z_i=zmat[1+(i-1)*T2:i*T2,.];
+
+                ab2_den=ab2_den+z_i'Dw_i;
+                ab2_neu=ab2_neu+z_i'Dy_i;
+                
+                i=i+1;
+            endo;
+
+            ab2=pinv(ab2_den'pinv(om1)*ab2_den)*ab2_den'pinv(om1)*ab2_neu;
+
+            /* 2nd step Sargans Statistic */
+            Dumat2=zeros(T2,n);
+            g_ab2_F=zeros(h,1);
+            i=1;
+                do while i<=n;
+                Dw_i=dy1mat[.,i]~dxmat[.,i];
+                Dy_i=dymat[.,i];   
+                Du_ab2_i=Dy_i-Dw_i*ab2;
+
+                 z_i=zmat[1+(i-1)*T2:i*T2,.];
+
+                g_ab2_F = g_ab2_F + z_i'Du_ab2_i;
+
+                Dumat2[.,i]=Du_ab2_i;                
+
+                i=i+1;
+            endo;
+            g_ab2_F=g_ab2_F/n;
+            S_ab2_F=n*g_ab2_F'pinv(om1)*g_ab2_F;
+
+
+retp(ab1,ab2,S_ab1_F,S_ab2_F);
+endp;
+
+
+
+
+
+
+
+
+
+
+        @METHOD OF PESERAN@
+
+             proc(1)=mpes;
+                local dv,idv,ldv,idvcsav,dvcsav,ldvcsav,xx,m,resldv,residv,vdv,vidv,vldv,xxx,lamhat;
+
+
+dv=x[.,1];
+ldv=x[.,2];
+idv=0*x[.,2];
+dv=reshape(dv,t,n)';
+idv=reshape(idv,t,n)';
+ldv=reshape(ldv,t,n)';
+
+
+                 @ calculate cross sectional averages @
+                   dvcsav=(sumc(dv[.,1:t])/n)';
+                    ldvcsav=(sumc(ldv[.,1:t])/n)';
+                    idvcsav=(sumc(idv[.,1:t])/n)';
+                    xx=(dvcsav'~ldvcsav'~idvcsav');
+if r == 1; xx=dvcsav'~ldvcsav';endif;
+
+                    m=(eye(t)-xx*inv(xx'xx)*xx');
+
+                   
+
+                    resldv=(m*ldv')';
+                    residv=(m*idv')';
+
+           @ res is now a n*t matrix of vars[1:t] projected onto averages  @
+
+             @now for the lam parameter@
+
+                   vdv=vec(dv);
+                   vldv=vec(resldv);
+vidv=vec(residv);
+xxx=vldv~vidv;
+if r == 1;xxx=vldv;endif;
+                   lamhat=(inv(xxx'xxx))*xxx'vdv;
+
+               retp(lamhat);
+           endp;
+
+
