@@ -1,6 +1,6 @@
 clear all
 close all
-clc
+%clc
 
 global isOctave;
 isOctave= (exist('OCTAVE_VERSION', 'builtin') == 5);
@@ -30,3 +30,4 @@ close all;
 %method=input('Press 1 for vasilis method or 3 for random search');
 seed=3;
 [Beta F G Hansen_stat Cov]=convergeFG2(B,M,Sel2,T,nf,d,lags,regressors,1,ZT,X,seed);
+report_stats(Beta,Cov,1,Hansen_stat);

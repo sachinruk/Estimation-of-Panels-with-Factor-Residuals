@@ -6,7 +6,7 @@ C=B;
 switch method
 
     case 1
-        iter=500;
+        iter=5000;
 %         parameters=zeros(regressors+(d*nf)+(T*nf),iter);
 %         Hansen_stat=zeros(iter);
         %if isOctave
@@ -50,7 +50,7 @@ switch method
 % Method 2
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
     case 2
-        for j=1:10     
+        for j=1:2     
             f=@minfunc;
             opts=optimset('MaxIter',10000000); %'Display','iter',
             F=rand(T,nf);       %starting value of F
@@ -59,8 +59,13 @@ switch method
             GFT=G*F';
             b=M*[1; -phi]-S*GFT(:);
             Hansen_stat=b'*b;
+            [Delta Delta_inv]=DeltaMatrix(ZT,X,phi,S,GFT);
+            Cov=SD(M,G,F, S, B, C, Delta, phi,T);            
+            C=Delta_inv;
+            B=chol(C);
+            
             phi
-            [B Delta Delta_inv]=CMatrix(ZT,X,phi,S,G*F');
+            Hansen_stat
         end
 
     otherwise

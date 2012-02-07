@@ -12,7 +12,7 @@ dv_dtheta=[dv_dphi dv_df dv_dg];
 
 %Gamma=(2*v'*dv_dtheta)';
 Gamma=dv_dtheta;
-Cov=inv(Gamma'*C*Gamma)*(Gamma'*C*Delta*C*Gamma)*inv(Gamma'*C*Gamma);
+Cov=pinv(Gamma'*C*Gamma)*(Gamma'*C*Delta*C*Gamma)*pinv(Gamma'*C*Gamma);
 % beta=ones(2,1);beta[2,1]=-phi;
 % vvv=cvechm*beta-cs*(bigf.*.eye(p*t) )*g;
 % dbdphi=zeros(2,1); dbdphi[2,1]=-1;
