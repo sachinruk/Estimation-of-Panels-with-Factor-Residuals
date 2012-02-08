@@ -1,4 +1,4 @@
-function [phi F G Hansen_stat Cov]=convergeFG2(B,M,S,T,nf,d,lags,regressors,method,ZT,X,seed)
+function [phi F G Hansen_stat Cov]=convergeFG2(B,M,S,T,nf,d,lags,regressors,method,ZT,X,seed,N)
 global isOctave;
 isOctave
 T=T-lags;
@@ -6,7 +6,7 @@ C=B;
 switch method
 
     case 1
-        iter=5000;
+        iter=500;
 %         parameters=zeros(regressors+(d*nf)+(T*nf),iter);
 %         Hansen_stat=zeros(iter);
         %if isOctave
@@ -33,12 +33,10 @@ switch method
             b=B*(M*[1; -phi]-S*GFT(:));
             Hansen_stat=b'*b;
             [Delta Delta_inv]=DeltaMatrix(ZT,X,phi,S,GFT);
-            Cov=SD(M,G,F, S, B, C, Delta, phi,T);            
+            Cov=SD(M,G,F, S, B, C, Delta, phi,T,N);            
             C=Delta_inv;
             B=chol(C);
-            
-            phi
-            Hansen_stat
+            report_stats(phi,Cov,1,Hansen_stat);
         end
 %         D=diff(parameters,1,2);
 %         dist=sum(abs(D),1);
@@ -63,9 +61,7 @@ switch method
             Cov=SD(M,G,F, S, B, C, Delta, phi,T);            
             C=Delta_inv;
             B=chol(C);
-            
-            phi
-            Hansen_stat
+            report_stats(phi,Cov,1,Hansen_stat);
         end
 
     otherwise
