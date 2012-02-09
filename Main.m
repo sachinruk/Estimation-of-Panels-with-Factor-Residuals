@@ -22,11 +22,9 @@ M=MMatrix(ZT, X, N);
 
 [c q]=size(M);
 nf=input('Insert how many factors there are:');
-s=size(Sel2);
-B=eye(s(1));
 regressors=length(lags)+length(exog)+length(wexog);
 d=size(W2,1);
 close all;
 %method=input('Press 1 for vasilis method or 3 for random search');
 seed=3;
-[Beta F G Hansen_stat Cov]=convergeFG2(B,M,Sel2,T,nf,d,lags,regressors,1,ZT,X,seed, N);
+[Beta F G Hansen_stat Cov]=convergeFG2(M,Sel2,T,nf,d,lags,regressors,1,ZT,X,seed, N);
