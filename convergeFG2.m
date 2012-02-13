@@ -26,12 +26,13 @@ iter=500;
 rng(seed);
 B=eye(size(S,1));
 F=rand(T,nf);       %starting value of F
+f=@minfunc;
+opts=optimset('MaxIter',10000000); %'Display','iter',
+%F=rand(T,nf);       %starting value of F
+F=fminsearch(@(F) f(B, M, F, S, d, T, nf, regressors), F,opts);
+[phi, G]=concentrateG(B, M, F, S, d, T, nf, regressors);
 for j=1:2
-    f=@minfunc;
-    opts=optimset('MaxIter',10000000); %'Display','iter',
-    %F=rand(T,nf);       %starting value of F
-    F_=fminsearch(@(F) f(B, M, F, S, d, T, nf, regressors), F,opts);
-    F=F_; [phi, G]=concentrateG(B, M, F, S, d, T, nf, regressors);
+    
 %     GFT=G*F';
 %     b=M*[1; -phi]-S*GFT(:);
 %     Hansen_stat=b'*b;
