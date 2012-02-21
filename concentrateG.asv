@@ -1,6 +1,0 @@
-function [phi G]=concentrateG(S,F,p)
-
-
-z=regress(y,x);
-phi=z(1:p);
-g=z(p+1:end);

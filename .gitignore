@@ -8,4 +8,5 @@ build/    # ignore all files in the build/ directory
 Timesheet*
 .~lock.Timesheet.xls#
 *Timesheet*
-
+*.asv
+*.orig

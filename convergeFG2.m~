@@ -25,7 +25,7 @@ switch method
                 [phi F]=concentrateF(B, M, G, S, d, T, nf, regressors);
 %                 parameters(:,i)=[phi; G(:); F(:)];
                 GFT=G*F';
-%                 b=M*[1; -phi]-S*GFT(:);
+                b=M*[1; -phi]-S*GFT(:);
 %                 Hansen_stat(i)=b'*b;
             end
 %             grad_u=SD(M,G,F,phi,p,t)
@@ -68,7 +68,12 @@ switch method
         error('invalid');
 end
 
-      
+% function Hansen_stat=minfunc(params, S, M)
+% 
+% phi=params(1); GFT=params(2:end);
+% b=M*[1; -phi]-S*GFT;
+% Hansen_stat=b'*b;
+        
 function Hansen_stat=minfunc(B, M, F, S, d, T, nf, regressors)
 
 [phi, G]=concentrateG(B, M, F, S, d, T, nf, regressors);

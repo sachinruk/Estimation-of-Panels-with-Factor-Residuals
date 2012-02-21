@@ -1,12 +1,9 @@
 clear all
 close all
-%clc
+clc
 
-global isOctave;
-isOctave= (exist('OCTAVE_VERSION', 'builtin') == 5);
-%file='AR(1), T=10, nf=2.csv';
-file='AR(1), T=10, nf=1_factor loadings mean zero.csv';
-
+N=2000; T=10; corr_lamda=0.0; a_x=0.5; a=0.5;
+data=generateData(N,T,corr_lamda,nf,a,a_x);
 [data columnName numvars]=readFile(file,isOctave);	%Read file in
 [y_index lags] =gety(columnName, numvars);		%get y and lags
 T=input('What is the time frame (T) the data is taken from:');
