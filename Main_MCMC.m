@@ -2,26 +2,34 @@ clear all
 close all
 clc
 
-N=2000; T=10; corr_lamda=0.0; a_x=0.5; a=0.5;
-data=generateData(N,T,corr_lamda,nf,a,a_x);
-[data columnName numvars]=readFile(file,isOctave);	%Read file in
-[y_index lags] =gety(columnName, numvars);		%get y and lags
-T=input('What is the time frame (T) the data is taken from:');
-[y x N]=stackData(data, numvars, T, y_index);			%pre process al the data
-[exog wexog]= getx(columnName, numvars);			%get the exogenous indices
+rng default;
+seed=33;
+rng(seed);
 
-%get all required matrices
+N=100; T=10; corr_lamda=0.0; a_x=0.5; a=0.5; nf=1;
+y_index=1; exog=[]; wexog=[]; lags=1; nreps=500;
+Beta=zeros(1,nreps);
 S=selectorMatrix(exog,wexog,T,lags);
-[W X]=WMatrix(data,y_index,exog,wexog,T,N,lags);
-[ZT Sel]=ZMatrix(S,W,lags,T,N);
-M=MMatrix(ZT, X, N);
-[Sel2 S2 W2]=readjust(data,T,N, y_index, exog, wexog,lags);	%readjust S and W
-
-[c q]=size(M);
-nf=input('Insert how many factors there are:');
 regressors=length(lags)+length(exog)+length(wexog);
-d=size(W2,1);
-close all;
-%method=input('Press 1 for vasilis method or 3 for random search');
-seed=3;
-[Beta F G Hansen_stat Cov]=convergeFG2(M,Sel2,T,nf,d,lags,regressors,2,ZT,X,seed, N);
+for i=1:nreps
+    data=generateData(N,T,corr_lamda,nf,a,a_x);
+    % [data columnName numvars]=readFile(file,isOctave);	%Read file in
+    % [y_index lags] =gety(columnName, numvars);		%get y and lags
+    % T=input('What is the time frame (T) the data is taken from:');
+    % [y x N]=stackData(data, numvars, T, y_index);			%pre process al the data
+    % [exog wexog]= getx(columnName, numvars);			%get the exogenous indices
+
+    %get all required matrices
+    
+    [W X]=WMatrix(data,y_index,exog,wexog,T,N,lags);
+    [ZT Sel]=ZMatrix(S,W,lags,T,N);
+    M=MMatrix(ZT, X, N);
+    [Sel2 S2 W2]=readjust(data,T,N, y_index, exog, wexog,lags);	%readjust S and W
+
+    [c q]=size(M);
+    
+    d=size(W2,1);
+    [Beta(i)]=convergeFG2(M,Sel2,T,nf,d,lags,regressors,2,ZT,X,seed, N);
+end
+hist(Beta,100);
+
